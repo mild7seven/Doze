@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sleep Analyzer Pro - PWA</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#040712">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #040712;
+            --card-bg: rgba(22, 33, 62, 0.8);
+            --accent-cyan: #00f2fe;
+            --accent-purple: #7000ff;
+            --accent-yellow: #fbc531;
+            --text-main: #e0e0e0;
+            --text-dim: #a0a0a0;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            text-align: center;
+            margin-bottom: 20px;
+            background: linear-gradient(to right, var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .full-width { grid-column: 1 / span 2; }
+
+        .card h3 {
+            margin: 0 0 10px 0;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-main);
+        }
+
+        .quality-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 6px solid var(--accent-purple);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+
+        .quality-value { font-size: 1.4rem; font-weight: bold; }
+        .quality-label { font-size: 0.6rem; color: var(--accent-cyan); }
+        .stat-main { font-size: 1.1rem; font-weight: bold; }
+        .stat-sub { font-size: 0.75rem; color: var(--text-dim); }
+
+        canvas#visualizer {
+            width: 100%;
+            height: 100px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 15px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        .btn-primary { background: linear-gradient(45deg, var(--accent-purple), var(--accent-cyan)); color: white; }
+        .btn-stop { background: #e84118; color: white; }
+
+        .recording-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.8rem;
+        }
+        .recording-item a { color: var(--accent-cyan); text-decoration: none; }
+
+        input[type="time"] {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid var(--accent-cyan);
+            color: white;
+            padding: 5px;
+            border-radius: 8px;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        .legend { display: flex; gap: 10px; font-size: 0.65rem; margin-top: 5px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    </style>
+</head>
+<body>
+
+    <h1>Clear analysis of sleep trends</h1>
+
+    <div class="container">
+        <div class="card">
+            <h3>Sleep Quality</h3>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div class="quality-circle">
+                    <span class="quality-value" id="qVal">82</span>
+                    <span class="quality-label">Great!</span>
+                </div>
+                <div>
+                    <div class="stat-main">7h 43m</div>
+                    <div class="stat-sub">Asleep</div>
+                    <div class="stat-sub" style="margin-top:5px;">23:30 - 08:33</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Sleep Stages</h3>
+            <canvas id="stagesChart" width="100" height="100"></canvas>
+            <div class="legend">
+                <span><span class="dot" style="background:var(--accent-purple)"></span> Deep</span>
+                <span><span class="dot" style="background:var(--accent-cyan)"></span> REM</span>
+            </div>
+        </div>
+
+        <div class="card full-width">
+            <h3>Sleep Debts</h3>
+            <canvas id="debtsChart" height="100"></canvas>
+        </div>
+
+        <div class="card full-width">
+            <h3>Live Noise & Pitch Monitor</h3>
+            <canvas id="visualizer"></canvas>
+            <div id="controls">
+                <button id="btnStart" class="btn btn-primary">Start Monitoring</button>
+                <button id="btnStop" class="btn btn-stop" style="display:none;">Stop & Save</button>
+            </div>
+            <div style="margin-top: 15px;">
+                <h3>Smart Alarm</h3>
+                <input type="time" id="alarmTime" value="07:00">
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Quality Trend</h3>
+            <canvas id="trendChart" height="150"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Noise Level</h3>
+            <canvas id="noiseChart" height="150"></canvas>
+        </div>
+
+        <div class="card full-width">
+            <h3>Saved Snoring / Talking Clips</h3>
+            <div id="recordList">
+                <p class="stat-sub">No recordings yet.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. INDEXED DB LOGIC ---
+        const DB_NAME = "SleepAnalyzerDB";
+        const STORE_NAME = "recordings";
+        let db;
+
+        const initDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+                    }
+                };
+                request.onsuccess = (e) => {
+                    db = e.target.result;
+                    resolve(db);
+                };
+                request.onerror = (e) => reject(e);
+            });
+        };
+
+        const saveRecording = async (blob, timestamp) => {
+            const tx = db.transaction(STORE_NAME, "readwrite");
+            const store = tx.objectStore(STORE_NAME);
+            store.add({ blob, timestamp, name: `Sleep Clip ${timestamp}` });
+            return tx.complete;
+        };
+
+        const getAllRecordings = () => {
+            return new Promise((resolve) => {
+                const tx = db.transaction(STORE_NAME, "readonly");
+                const store = tx.objectStore(STORE_NAME);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+            });
+        };
+
+        const deleteRecording = (id) => {
+            const tx = db.transaction(STORE_NAME, "readwrite");
+            tx.objectStore(STORE_NAME).delete(id);
+            tx.oncomplete = renderRecordings;
+        };
+
+        // --- 2. UI / DASHBOARD CHARTS ---
+        const renderCharts = () => {
+            new Chart(document.getElementById('stagesChart'), {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: [30, 20, 50],
+                        backgroundColor: ['#7000ff', '#00f2fe', '#1e2d5a'],
+                        borderWidth: 0
+                    }]
+                },
+                options: { cutout: '70%', plugins: { legend: { display: false } } }
+            });
+
+            new Chart(document.getElementById('debtsChart'), {
+                type: 'line',
+                data: {
+                    labels: ['12', '13', '14', '15', '16', '17', '18'],
+                    datasets: [{
+                        label: 'Debt',
+                        data: [2, 1.5, 3, 2.2, 1.8, 2.5, 1],
+                        borderColor: '#00f2fe',
+                        tension: 0.4,
+                        pointBackgroundColor: '#fbc531',
+                        fill: false
+                    }]
+                },
+                options: { scales: { y: { display: false }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }
+            });
+
+            new Chart(document.getElementById('trendChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['', '', '', '', ''],
+                    datasets: [{
+                        data: [10, 15, 8, 20, 12],
+                        backgroundColor: (ctx) => ctx.raw > 15 ? '#7000ff' : '#00f2fe',
+                        borderRadius: 5
+                    }]
+                },
+                options: { scales: { y: { display: false }, x: { display: false } }, plugins: { legend: { display: false } } }
+            });
+
+            new Chart(document.getElementById('noiseChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['', '', '', '', ''],
+                    datasets: [{
+                        data: [5, 12, 15, 7, 10],
+                        backgroundColor: '#fbc531',
+                        borderRadius: 5
+                    }]
+                },
+                options: { scales: { y: { display: false }, x: { display: false } }, plugins: { legend: { display: false } } }
+            });
+        };
+
+        // --- 3. AUDIO ENGINE & VISUALIZER ---
+        let audioCtx, analyser, source, stream, recorder;
+        let chunks = [];
+        let animationId;
+
+        const startAudio = async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                source = audioCtx.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                analyser.fftSize = 2048;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+
+                const canvas = document.getElementById('visualizer');
+                const canvasCtx = canvas.getContext('2d');
+
+                const draw = () => {
+                    animationId = requestAnimationFrame(draw);
+                    analyser.getByteTimeDomainData(dataArray);
+
+                    canvasCtx.fillStyle = 'rgba(4, 7, 18, 0.5)';
+                    canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+                    canvasCtx.lineWidth = 2;
+                    canvasCtx.strokeStyle = '#00f2fe';
+                    canvasCtx.beginPath();
+
+                    let sliceWidth = canvas.width * 1.0 / bufferLength;
+                    let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        let v = dataArray[i] / 128.0;
+                        let y = v * canvas.height / 2;
+                        if (i === 0) canvasCtx.moveTo(x, y);
+                        else canvasCtx.lineTo(x, y);
+                        x += sliceWidth;
+                    }
+                    canvasCtx.lineTo(canvas.width, canvas.height / 2);
+                    canvasCtx.stroke();
+                };
+                draw();
+
+                recorder = new MediaRecorder(stream);
+                recorder.ondataavailable = (e) => chunks.push(e.data);
+                recorder.onstop = async () => {
+                    const blob = new Blob(chunks, { type: 'audio/ogg; codecs=opus' });
+                    await saveRecording(blob, new Date().toLocaleString());
+                    chunks = [];
+                    renderRecordings();
+                };
+                recorder.start();
+            } catch (err) {
+                alert("Akses mikrofon dibutuhkan untuk merekam suara!");
+            }
+        };
+
+        const stopAudio = () => {
+            if (recorder && recorder.state !== "inactive") recorder.stop();
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            cancelAnimationFrame(animationId);
+            
+            const canvas = document.getElementById('visualizer');
+            const canvasCtx = canvas.getContext('2d');
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        // --- 4. APP LOGIC ---
+        const renderRecordings = async () => {
+            const list = await getAllRecordings();
+            const container = document.getElementById('recordList');
+            if (list.length === 0) {
+                container.innerHTML = '<p class="stat-sub">No recordings yet.</p>';
+                return;
+            }
+            container.innerHTML = list.map(item => `
+                <div class="recording-item">
+                    <span>${item.timestamp}</span>
+                    <div>
+                        <a href="${URL.createObjectURL(item.blob)}" download="sleep_recording.ogg">Download</a>
+                        <button onclick="deleteRecording(${item.id})" style="background:none; border:none; color:#e84118; cursor:pointer; margin-left:10px;">Del</button>
+                    </div>
+                </div>
+            `).join('');
+        };
+
+        document.getElementById('btnStart').onclick = () => {
+            startAudio();
+            document.getElementById('btnStart').style.display = 'none';
+            document.getElementById('btnStop').style.display = 'block';
+        };
+
+        document.getElementById('btnStop').onclick = () => {
+            stopAudio();
+            document.getElementById('btnStart').style.display = 'block';
+            document.getElementById('btnStop').style.display = 'none';
+        };
+
+        // --- 5. REGISTER PWA SERVICE WORKER ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+
+        // Init App
+        window.onload = async () => {
+            await initDB();
+            renderCharts();
+            renderRecordings();
+        };
+    </script>
+</body>
+</html>
